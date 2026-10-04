@@ -59,8 +59,9 @@ jobs:
 
       - name: Siapkan aports (device + kernel + modul vendor)
         run: |
-          # tarball modul + sumber lain harus se-dir dengan APKBUILD
+          # tarball modul + force_insmod.c harus se-dir dengan APKBUILD
           cp assets/vendor-modules.tar.xz device/testing/mtk-vendor-modules/
+          cp scripts/force_insmod.c device/testing/mtk-vendor-modules/
           # init pmbootstrap non-interaktif (clone pmaports)
           yes "" | pmbootstrap init || true
           PMAPORTS="$HOME/.local/var/pmbootstrap/cache_git/pmaports"
