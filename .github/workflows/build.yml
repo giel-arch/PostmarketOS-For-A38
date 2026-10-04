@@ -72,6 +72,9 @@ jobs:
           cp -r device/testing/* "$PMAPORTS/device/testing/"
           pmbootstrap config device oppo-a38
           pmbootstrap config ui console
+          # OpenRC: layanan usb-gadget (init.d) butuh ini; systemd edge
+          # tidak tersedia di binary repo sehingga build order gagal
+          pmbootstrap config service_manager openrc
           pmbootstrap config user user
           pmbootstrap config hostname oppo-a38
 
