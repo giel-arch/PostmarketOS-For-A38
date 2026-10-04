@@ -78,17 +78,16 @@ jobs:
           pmbootstrap config user user
           pmbootstrap config hostname oppo-a38
 
-      - name: Build paket
+      - name: Checksum & build rootfs
         run: |
           pmbootstrap checksum linux-oppo-a38
           pmbootstrap checksum device-oppo-a38
           pmbootstrap checksum mtk-vendor-modules
-          pmbootstrap build linux-oppo-a38
-          pmbootstrap build device-oppo-a38
-          pmbootstrap build mtk-vendor-modules
-
-      - name: Build image rootfs
-        run: |
+          # Jangan rebuild paket upstream yang "outdated" (pmaports dirty
+          # karena kita menambah device pkg). pmbootstrap otomatis
+          # membuild device-oppo-a38 / linux-oppo-a38 /
+          # mtk-vendor-modules karena tidak ada di binary repo.
+          pmbootstrap config build_pkgs_on_install false
           printf '147147\n147147\n' | pmbootstrap install \
             --password 147147 || {
             tail -n 200 "$HOME/.local/var/pmbootstrap/log.txt"; exit 1; }
