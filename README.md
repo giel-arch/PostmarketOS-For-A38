@@ -23,12 +23,13 @@ lalu unduh artifact `pmOS-oppo-a38` dan flash.
    init tidak pernah menemukan partisi. Sekarang `pmos.fragment` memaksa
    `DEVTMPFS=y`.
 2. **Partisi dicari lewat nama/label** yang dibuat ueventd Android
-   (`/dev/disk/by-partlabel/...` — tidak ada di pmOS). Sekarang rootfs
-   dituju **eksplisit lewat path mmcblk**: `root_path=/dev/mmcblk0p59`
-   (userdata) diinjeksi ke initramfs, plus fallback label `pmOS_root`.
-3. **`initramfs-extra` tidak dimuat** (butuh partisi boot yang tidak kita
-   punya). Sekarang initramfs + initramfs-extra **digabung** sehingga
-   `jump_init_2nd` langsung ke stage 2 tanpa partisi boot.
+   (`/dev/disk/by-partlabel/...` — tidak ada di pmOS). Rootfs diflash ke
+   userdata sebagai **ext4 murni** dan initramfs menunjuknya **eksplisit
+   lewat path mmcblk**: `root_path=/dev/mmcblk0p59`.
+3. **Partisi `init_boot` hanya 8MB.** Karena itu init_boot hanya berisi
+   initramfs utama (cek otomatis di CI: harus ≤ 8MB), dan
+   `initramfs-extra` diambil saat boot dari `/boot` di dalam rootfs —
+   mode **stowaway** pmOS untuk perangkat tanpa partisi boot.
 4. **Modul vendor MTK tidak bisa dimuat** (vermagic beda). Sekarang
    dimuat paksa via `force_insmod` (`finit_module` +
    `MODULE_INIT_IGNORE_VERMAGIC/MODVERSIONS`), baik di initramfs
@@ -44,8 +45,8 @@ lalu unduh artifact `pmOS-oppo-a38` dan flash.
 2. Tunggu (~40-60 menit: build kernel + pmbootstrap + repack).
 3. Unduh artifact `pmOS-oppo-a38` → berisi:
    - `boot-pmos.img` — kernel pmOS (ditempel ke boot_b stok)
-   - `init_boot-pmos.img` — initramfs pmOS (ditempel ke init_boot_b bersih)
-   - `oppo-a38.img` — rootfs (diflash ke userdata)
+   - `init_boot-pmos.img` — initramfs utama pmOS, **≤ 8MB** (batas partisi init_boot)
+   - `oppo-a38.img` — rootfs ext4 murni (diflash ke userdata)
    - `vbmeta_b.bin` + `FLASH.txt`
 
 ### Flashing (slot B, dari fastboot/bootloader)
