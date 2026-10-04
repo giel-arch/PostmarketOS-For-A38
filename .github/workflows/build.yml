@@ -37,16 +37,16 @@ jobs:
 
       - name: Build kernel (config pmOS)
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/toolchain"
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
           git clone --depth=1 \
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r510928.git \
             "$GITHUB_WORKSPACE/toolchain"
           cd kernel
           echo -n "" > scripts/setlocalversion
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 oppo_a38_defconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 oppo_a38_defconfig
           ./scripts/kconfig/merge_config.sh -m -O out \
             out/.config ../kernel-pmos/pmos.fragment
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
           make -j"$(nproc)" O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- Image.gz
           cp out/arch/arm64/boot/Image.gz \
