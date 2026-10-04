@@ -95,8 +95,12 @@ jobs:
 
       - name: Repack boot + init_boot (magiskboot)
         run: |
-          chmod +x scripts/repack-initboot.sh
+          chmod +x scripts/*.sh
           EXPORT_DIR=$(ls -d /tmp/postmarketOS-export* | head -n 1)
+          # rootfs: ganti jadi ext4 murni (partisi root saja) + suntik
+          # /boot -> root langsung /dev/mmcblk0p59 via mode stowaway
+          scripts/postprocess-rootfs.sh "$EXPORT_DIR"
+          # init_boot: initramfs utama SAJA (partisi init_boot hanya 8MB)
           scripts/repack-initboot.sh "$GITHUB_WORKSPACE" \
             "$EXPORT_DIR" "$EXPORT_DIR/init_boot-pmos.img"
 

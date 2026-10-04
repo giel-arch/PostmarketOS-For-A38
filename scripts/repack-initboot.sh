@@ -5,18 +5,22 @@
 #   $2 = direktori export pmbootstrap (berisi initramfs, initramfs-extra)
 #   $3 = path output init_boot-pmos.img
 #
-# Apa yang dilakukan (perbaikan atas percobaan lama):
-#   1. initramfs + initramfs-extra DIGABUNG -> /init_2nd.sh ada di
-#      initramfs -> jump_init_2nd() langsung ke stage 2 TANPA butuh
-#      partisi boot (boot_b kita berisi kernel saja, bukan FS).
-#   2. Perbaiki tabrakan /lib: vendor_boot ramdisk menyediakan /lib (dir
-#      berisi modul vendor), initramfs pmOS punya /lib -> usr/lib
-#      (symlink). Sama seperti percobaan lama: /lib jadi dir sungguhan.
-#   3. Injeksi root_path default = /dev/mmcblk0p59 (userdata) - path
-#      mmcblk EKSPLISIT, bukan by-name/by-partlabel.
-#   4. force_insmod + daftar modul vendor boot-kritis dimuat sebelum
-#      stage 2 (vermagic modul vendor != build kita).
-#   5. cpio mentah -> magiskboot repack (kompres lz4_legacy, format
+# Batasan keras: partisi init_boot perangkat hanya 8MB, jadi HANYA
+# initramfs utama yang masuk ke sini (bukan gabungan dengan -extra).
+#
+# Apa yang dilakukan:
+#   1. Perbaiki tabrakan /lib: vendor_boot ramdisk menyediakan /lib
+#      (dir berisi modul vendor), initramfs pmOS punya /lib ->
+#      usr/lib (symlink). /lib jadi dir sungguhan berisi isi usr/lib.
+#   2. force_insmod + daftar modul vendor boot-kritis dimuat lebih
+#      awal (vermagic modul vendor != build kita).
+#   3. Default runtime diinjeksi (cmdline boot kita kosong karena
+#      repack magiskboot mempertahankan header stok):
+#        - root_path=/dev/mmcblk0p59  (userdata, ext4 murni hasil
+#          postprocess-rootfs.sh)
+#        - stowaway=y  (mode pmOS "boot di rootfs": initramfs-extra
+#          diambil dari /boot di dalam rootfs)
+#   4. cpio mentah -> magiskboot repack (kompres lz4_legacy, format
 #      asli init_boot; gzip setelah lz4_legacy vendor TIDAK bisa
 #      dibaca kernel).
 set -euo pipefail
@@ -39,11 +43,10 @@ aarch64-linux-gnu-gcc -static -O2 "$REPO/scripts/force_insmod.c" -o force_insmod
 cp "$REPO/assets/init_boot_b-clean.bin" .
 ./magiskboot unpack init_boot_b-clean.bin
 
-# --- gabung initramfs + initramfs-extra dalam SATU tree ---
+# --- ekstrak initramfs utama SAJA ---
 mkdir rd
 cd rd
 gzip -dc "$EXPORT/initramfs" | cpio -id --no-absolute-filenames 2>/dev/null
-gzip -dc "$EXPORT/initramfs-extra" | cpio -id --no-absolute-filenames 2>/dev/null
 
 # --- perbaikan /lib (vendor_boot = dir /lib; pmOS = symlink) ---
 rm -f lib
@@ -55,10 +58,13 @@ rm -rf lib/modules
 cp ../force_insmod usr/bin/force_insmod
 chmod +x usr/bin/force_insmod
 
-# --- patch init_functions.sh: helper + default root_path ---
+# --- patch init_functions.sh: default runtime + helper ---
 cat >> init_functions.sh <<'OSSI_EOF'
 
 # === OPPO A38 (ossi) pmOS port patches ===
+# Mode stowaway: /boot ada DI DALAM rootfs (partisi userdata diekstrak
+# menjadi ext4 murni oleh postprocess-rootfs.sh, tanpa GPT nested).
+stowaway="${stowaway:-y}"
 force_load_mtk_modules() {
 	echo "  ossi: force-loading MTK vendor modules..."
 	for mod in clk-common clk-mt6768 clk-mt6768-pg clkchk-mt6768 \
@@ -85,11 +91,15 @@ root_path_default() {
 OSSI_EOF
 
 sed -i 's|^find_root_partition() {|find_root_partition() {\n\troot_path_default|' init_functions.sh
-# di dalam cpio initramfs, script stage-1 bernama "init"
 sed -i 's|^jump_init_2nd$|force_load_mtk_modules\njump_init_2nd|' init
 
 # --- repack: cpio mentah, magiskboot kompres lz4_legacy ---
 find . -print0 | cpio --null -o -H newc 2>/dev/null > ../ramdisk.cpio
 cd ..
 ./magiskboot repack init_boot_b-clean.bin "$OUT"
-echo "[ossi] selesai: $OUT"
+SZ=$(stat -c%s "$OUT")
+echo "[ossi] selesai: $OUT ($SZ byte)"
+if [ "$SZ" -gt 8388608 ]; then
+	echo "[ossi] PERINGATAN: melebihi 8MB partisi init_boot!"
+	exit 1
+fi
