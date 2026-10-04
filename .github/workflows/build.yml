@@ -55,6 +55,8 @@ jobs:
       - name: Install pmbootstrap
         run: |
           pipx install git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          # runner pakai python3.10: pmbootstrap butuh tomli (<3.11)
+          pipx inject pmbootstrap tomli
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Siapkan aports (device + kernel + modul vendor)
@@ -65,6 +67,8 @@ jobs:
           # init pmbootstrap non-interaktif (clone pmaports)
           yes "" | pmbootstrap init || true
           PMAPORTS="$HOME/.local/var/pmbootstrap/cache_git/pmaports"
+          test -d "$PMAPORTS/device/testing" || {
+            echo "pmaports tidak ter-clone!"; exit 1; }
           cp -r device/testing/* "$PMAPORTS/device/testing/"
           pmbootstrap config device oppo-a38
           pmbootstrap config ui console
@@ -100,8 +104,9 @@ jobs:
           python3 -c "import zipfile; zipfile.ZipFile('magisk.apk').extract('lib/x86_64/libmagiskboot.so')"
           cp lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
           cp "$GITHUB_WORKSPACE/kernel-pmos/assets/boot_b.bin" .
-          cp "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz" kernel
           ./magiskboot unpack boot_b.bin
+          # PENTING: cp SETELAH unpack (unpack menulis file 'kernel' stok)
+          cp "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz" kernel
           ./magiskboot repack boot_b.bin boot-pmos.img
           rm -f ramdisk.cpio kernel dtb boot_signature header boot_b.bin magisk.apk
           cp "$GITHUB_WORKSPACE/assets/vbmeta_b.bin" .
