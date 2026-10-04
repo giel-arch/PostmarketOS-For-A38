@@ -72,7 +72,8 @@ jobs:
           cp -r device/testing/* "$PMAPORTS/device/testing/"
           pmbootstrap config device oppo-a38
           pmbootstrap config ui console
-          pmbootstrap config user_name user
+          pmbootstrap config user user
+          pmbootstrap config hostname oppo-a38
 
       - name: Build paket
         run: |
