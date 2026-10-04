@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+description="OPPO A38 USB NCM gadget (ssh root@172.16.42.1 lewat kabel USB)"
+
+depend() {
+	need localmount
+	after bootmisc modules
+}
+
+start() {
+	ebegin "Starting OPPO A38 USB NCM gadget"
+	/usr/libexec/oppo-a38/usb-gadget.sh
+	eend $?
+}

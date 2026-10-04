@@ -1,0 +1,30 @@
+pkgname=mtk-vendor-modules
+pkgver=1.0
+pkgrel=0
+pkgdesc="Modul kernel vendor MTK (force-load) + force_insmod untuk OPPO A38"
+url="https://github.com/giel-arch/PostmarketOS-For-A38"
+arch="aarch64"
+license="GPL-2.0-only"
+options="!check !archcheck !strip"
+makedepends="gcc musl-dev"
+builddir="$srcdir"
+source="vendor-modules.tar.xz force_insmod.c usb-gadget.sh usb-gadget.initd"
+
+build() {
+	gcc -static -O2 -o "$srcdir/force_insmod" "$srcdir/force_insmod.c"
+}
+
+package() {
+	install -Dm755 "$srcdir/force_insmod" "$pkgdir/usr/bin/force_insmod"
+
+	# Modul vendor dari vendor_boot (vermagic beda -> dimuat paksa)
+	install -d "$pkgdir/lib/modules/vendor-force"
+	install -m644 "$srcdir"/modules/*.ko "$pkgdir/lib/modules/vendor-force/"
+
+	# Gadget USB NCM supaya SSH bisa jalan via kabel (v1 belum ada layar)
+	install -Dm755 "$srcdir/usb-gadget.sh" \
+		"$pkgdir/usr/libexec/oppo-a38/usb-gadget.sh"
+	install -Dm755 "$srcdir/usb-gadget.initd" "$pkgdir/etc/init.d/usb-gadget"
+	install -d "$pkgdir/etc/runlevels/default"
+	ln -s /etc/init.d/usb-gadget "$pkgdir/etc/runlevels/default/usb-gadget"
+}

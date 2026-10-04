@@ -1,0 +1,133 @@
+name: Build postmarketOS (OPPO A38)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pmos:
+    name: Kernel + pmbootstrap + repack
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repo ini
+        uses: actions/checkout@v4
+
+      - name: Checkout repo kernel PMOS (fragment + assets)
+        uses: actions/checkout@v4
+        with:
+          repository: giel-arch/Kernel-mt6769-a38-PMOS
+          ref: main
+          path: kernel-pmos
+
+      - name: Checkout source kernel (giel-arch/kernel-mt6769-a38)
+        uses: actions/checkout@v4
+        with:
+          repository: giel-arch/kernel-mt6769-a38
+          ref: main
+          path: kernel
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex \
+            gcc-aarch64-linux-gnu git libssl-dev python3 zstd lz4 cpio
+
+      - name: Build kernel (config pmOS)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/toolchain"
+          git clone --depth=1 \
+            https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r510928.git \
+            "$GITHUB_WORKSPACE/toolchain"
+          cd kernel
+          echo -n "" > scripts/setlocalversion
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 oppo_a38_defconfig
+          ./scripts/kconfig/merge_config.sh -m -O out \
+            out/.config ../kernel-pmos/pmos.fragment
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- Image.gz
+          cp out/arch/arm64/boot/Image.gz \
+            "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz"
+
+      - name: Install pmbootstrap
+        run: |
+          pipx install git+https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Siapkan aports (device + kernel + modul vendor)
+        run: |
+          # tarball modul + sumber lain harus se-dir dengan APKBUILD
+          cp assets/vendor-modules.tar.xz device/testing/mtk-vendor-modules/
+          # init pmbootstrap non-interaktif (clone pmaports)
+          yes "" | pmbootstrap init || true
+          PMAPORTS="$HOME/.local/var/pmbootstrap/cache_git/pmaports"
+          cp -r device/testing/* "$PMAPORTS/device/testing/"
+          pmbootstrap config device oppo-a38
+          pmbootstrap config ui console
+          pmbootstrap config user_name user
+
+      - name: Build paket
+        run: |
+          pmbootstrap checksum linux-oppo-a38
+          pmbootstrap checksum device-oppo-a38
+          pmbootstrap checksum mtk-vendor-modules
+          pmbootstrap build linux-oppo-a38
+          pmbootstrap build device-oppo-a38
+          pmbootstrap build mtk-vendor-modules
+
+      - name: Build image rootfs
+        run: |
+          printf '147147\n147147\n' | pmbootstrap install \
+            --password 147147 || {
+            tail -n 200 "$HOME/.local/var/pmbootstrap/log.txt"; exit 1; }
+          pmbootstrap export
+
+      - name: Repack boot + init_boot (magiskboot)
+        run: |
+          chmod +x scripts/repack-initboot.sh
+          EXPORT_DIR=$(ls -d /tmp/postmarketOS-export* | head -n 1)
+          scripts/repack-initboot.sh "$GITHUB_WORKSPACE" \
+            "$EXPORT_DIR" "$EXPORT_DIR/init_boot-pmos.img"
+
+          # boot-pmos.img: kernel pmOS ke boot_b stok (kernel saja)
+          cd "$EXPORT_DIR"
+          curl -sL -o magisk.apk \
+            https://github.com/topjohnwu/Magisk/releases/download/v28.1/Magisk-v28.1.apk
+          python3 -c "import zipfile; zipfile.ZipFile('magisk.apk').extract('lib/x86_64/libmagiskboot.so')"
+          cp lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
+          cp "$GITHUB_WORKSPACE/kernel-pmos/assets/boot_b.bin" .
+          ./magiskboot unpack boot_b.bin
+          cp "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz" kernel.img
+          ./magiskboot repack boot_b.bin boot-pmos.img
+          rm -f ramdisk.cpio kernel dtb boot_signature header boot_b.bin magisk.apk
+          cp "$GITHUB_WORKSPACE/assets/vbmeta_b.bin" .
+
+          cat > FLASH.txt <<'EOF'
+          === postmarketOS/Nura OPPO A38 (ossi) - slot B ===
+          Perangkat harus di fastboot/bootloader: adb reboot bootloader
+          1. fastboot flash boot_b boot-pmos.img
+          2. fastboot flash init_boot_b init_boot-pmos.img
+          3. fastboot flash userdata oppo-a38.img      (MENGHAPUS data Android!)
+          4. fastboot flash vbmeta_b --disable-verity --disable-verification vbmeta_b.bin
+          5. fastboot reboot
+
+          SSH via USB: host pakai IP 172.16.42.2, lalu:
+            ssh root@172.16.42.1   (password 147147)
+          Restore Android: flash ulang boot_b/init_boot_b/vbmeta_b stok
+          (dump ada di ~/WorkSpace/OPPO A38/) + reflashing super/userdata.
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmOS-oppo-a38
+          path: |
+            /tmp/postmarketOS-export*/boot-pmos.img
+            /tmp/postmarketOS-export*/init_boot-pmos.img
+            /tmp/postmarketOS-export*/oppo-a38.img
+            /tmp/postmarketOS-export*/vbmeta_b.bin
+            /tmp/postmarketOS-export*/FLASH.txt
+          if-no-files-found: error
