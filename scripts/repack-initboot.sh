@@ -85,7 +85,8 @@ root_path_default() {
 OSSI_EOF
 
 sed -i 's|^find_root_partition() {|find_root_partition() {\n\troot_path_default|' init_functions.sh
-sed -i 's|^jump_init_2nd$|force_load_mtk_modules\njump_init_2nd|' init.sh
+# di dalam cpio initramfs, script stage-1 bernama "init"
+sed -i 's|^jump_init_2nd$|force_load_mtk_modules\njump_init_2nd|' init
 
 # --- repack: cpio mentah, magiskboot kompres lz4_legacy ---
 find . -print0 | cpio --null -o -H newc 2>/dev/null > ../ramdisk.cpio
