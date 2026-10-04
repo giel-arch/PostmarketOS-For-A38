@@ -15,8 +15,7 @@ set -euo pipefail
 EXPORT="$1"
 IMG="$EXPORT/oppo-a38.img"
 
-# Hasil pmbootstrap export milik root — samakan akses agar debugfs/dd
-# bisa jalan sebagai user CI
+# Hasil pmbootstrap export milik root — samakan akses agar dd bisa jalan
 sudo chmod a+rw "$IMG" "$EXPORT"/initramfs "$EXPORT"/initramfs-extra \
 	"$EXPORT"/vmlinuz-* 2>/dev/null || true
 
@@ -26,21 +25,20 @@ START=$(echo "$LINE" | sed 's/.*start= *\([0-9]*\).*/\1/')
 SIZE=$(echo "$LINE" | sed 's/.*size= *\([0-9]*\).*/\1/')
 echo "[ossi] p2: start=$START size=$SIZE (sektor 512B)"
 
-# Suntik file /boot ke partisi root (debugfs, tanpa mount)
+# Ekstrak p2 dulu menjadi ext4 murni (debugfs tidak bisa buka GPT)
+TMP="$EXPORT/oppo-a38-root.img"
+dd if="$IMG" of="$TMP" bs=512 skip="$START" count="$SIZE" status=none
+file "$TMP" | grep -q 'pmOS_root' || { echo "[ossi] label pmOS_root hilang!"; exit 1; }
+
+# Suntik file /boot ke rootfs ekstraksi (debugfs, tanpa mount)
 for f in vmlinuz-oppo-a38 initramfs initramfs-extra; do
-	debugfs -w -R "write $EXPORT/$f /boot/$f" "$IMG" 2>&1 | grep -v 'Filesystem' || true
+	debugfs -w -R "write $EXPORT/$f /boot/$f" "$TMP" 2>&1 | grep -v 'debugfs 1\|Filesystem' || true
 done
 # pastikan benar-benar tertulis
 for f in vmlinuz-oppo-a38 initramfs initramfs-extra; do
-	debugfs -R "ls -l /boot" "$IMG" 2>/dev/null | grep -q "$f" || {
+	debugfs -R "ls -l /boot" "$TMP" 2>/dev/null | grep -q "$f" || {
 		echo "[ossi] GAGAL menulis /boot/$f"; exit 1; }
 done
 
-# Ekstrak p2 menjadi image rootfs tunggal
-TMP="$EXPORT/oppo-a38-root.img"
-dd if="$IMG" of="$TMP" bs=512 skip="$START" count="$SIZE" status=none
 mv "$TMP" "$IMG"
-
-# Sanity: label tetap pmOS_root
-file "$IMG" | grep -q 'pmOS_root' || { echo "[ossi] label pmOS_root hilang!"; exit 1; }
 echo "[ossi] rootfs tunggal siap: $IMG ($(stat -c%s "$IMG") byte)"
