@@ -100,8 +100,8 @@ jobs:
           python3 -c "import zipfile; zipfile.ZipFile('magisk.apk').extract('lib/x86_64/libmagiskboot.so')"
           cp lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
           cp "$GITHUB_WORKSPACE/kernel-pmos/assets/boot_b.bin" .
+          cp "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz" kernel
           ./magiskboot unpack boot_b.bin
-          cp "$GITHUB_WORKSPACE/device/testing/linux-oppo-a38/Image.gz" kernel.img
           ./magiskboot repack boot_b.bin boot-pmos.img
           rm -f ramdisk.cpio kernel dtb boot_signature header boot_b.bin magisk.apk
           cp "$GITHUB_WORKSPACE/assets/vbmeta_b.bin" .
