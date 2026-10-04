@@ -67,19 +67,23 @@ cat >> init_functions.sh <<'OSSI_EOF'
 stowaway="${stowaway:-y}"
 force_load_mtk_modules() {
 	echo "  ossi: force-loading MTK vendor modules..."
-	# Urutan = urutan dependensi (cqhci SEBELUM mtk-mmc; kalau tidak,
-	# finit_module mtk-mmc gagal karena simbol cqhci belum ada).
-	MODS="clk-common clk-mt6768 clk-mt6768-pg clkchk-mt6768 clkdbg-mt6768 \
-	           clk-fmeter-mt6768 pd-chk-mt6768 pinctrl-mtk-v2 pinctrl-mt6768 \
-	           mtk-pmic-wrap mt6397 mt6358-regulator mt635x-auxadc \
-	           mt6577_auxadc mtk-scpsys mtk-scpsys-mt6768 \
-	           mtk-scpsys-bringup mtk_iommu mtk-smi cqhci mtk-mmc \
-	           mtk-mmc-wp timer-mediatek i2c-mt65xx"
+	# Urutan DIHASILKAN dari graf depends modinfo (topological sort,
+	# 39 modul, siklus=0): cqhci-mtk_mmc-dbg dsb. sebelum mtk-mmc.
+	# Fase initramfs = closure boot-kritis (eMMC + pmic + clk + iommu).
+	MODS="aee_aed.ko buildvariant.ko emicen.ko iommu_secure.ko irq-dbg.ko \
+mrdump.ko mt6358-regulator.ko mt635x-auxadc.ko mt6397.ko mt6577_auxadc.ko \
+mtk_boot_common.ko mtk_iommu_util.ko mtk-mmc-wp.ko mtk-scpsys-mt6768.ko \
+oplusboot.ko pinctrl-mtk-v2.ko rpmb.ko timer-mediatek.ko clk-common.ko \
+mtk-pmic-wrap.ko mtk-smi.ko blocktag.ko iommu_debug.ko \
+oplus_bsp_boot_projectinfo.ko pinctrl-mtk-common-v2_debug.ko rpmb-mtk.ko \
+clk-fmeter-mt6768.ko clk-mt6768.ko clk-mt6768-pg.ko clkchk-mt6768.ko \
+clkdbg-mt6768.ko mtk-smi-dbg.ko cqhci.ko device_info.ko i2c-mt65xx.ko \
+mtk-mmc-dbg.ko pd-chk-mt6768.ko mtk_iommu.ko mtk-mmc.ko"
 	# 3 pass: modul yang gagal karena dependensinya belum ke-load di
 	# pass sebelumnya berpeluang sukses di pass berikutnya.
 	for pass in 1 2 3; do
 		for mod in $MODS; do
-			f=$(find /lib/modules -name "${mod}.ko" 2>/dev/null | head -n 1)
+			f=$(find /lib/modules -name "$mod" 2>/dev/null | head -n 1)
 			[ -n "$f" ] || continue
 			if ! /usr/bin/force_insmod "$f" >/dev/null 2>&1; then
 				[ "$pass" = "3" ] && echo "  ossi: GAGAL load $mod"
