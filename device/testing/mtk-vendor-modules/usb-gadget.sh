@@ -4,6 +4,9 @@
 
 LOAD() {
 	f="/lib/modules/vendor-force/$1"
+	name=$(echo "$1" | sed 's/\.ko$//; s/-/_/g')
+	# sudah termuat? (EEXIST bukan kegagalan)
+	grep -qE "^($name|${1%.ko}) " /proc/modules 2>/dev/null && return 0
 	if [ -f "$f" ]; then
 		/usr/bin/force_insmod "$f" >/dev/null 2>&1 || \
 			logger -t usb-gadget "GAGAL load $1"
