@@ -15,6 +15,11 @@ set -euo pipefail
 EXPORT="$1"
 IMG="$EXPORT/oppo-a38.img"
 
+# Hasil pmbootstrap export milik root — samakan akses agar debugfs/dd
+# bisa jalan sebagai user CI
+sudo chmod a+rw "$IMG" "$EXPORT"/initramfs "$EXPORT"/initramfs-extra \
+	"$EXPORT"/vmlinuz-* 2>/dev/null || true
+
 # Offset & ukuran p2 (sektor 512B) dari tabel GPT
 LINE=$(sfdisk -d "$IMG" | grep 'img2')
 START=$(echo "$LINE" | sed 's/.*start= *\([0-9]*\).*/\1/')
