@@ -88,9 +88,16 @@ jobs:
           # membuild device-oppo-a38 / linux-oppo-a38 /
           # mtk-vendor-modules karena tidak ada di binary repo.
           pmbootstrap config build_pkgs_on_install false
-          printf '147147\n147147\n' | pmbootstrap install \
-            --password 147147 || {
-            tail -n 200 "$HOME/.local/var/pmbootstrap/log.txt"; exit 1; }
+          # pmbootstrap kadang flake saat unmount qemu-aarch64-static
+          # (target is busy) - retry sampai 3x, zap chroot di antaranya
+          for i in 1 2 3; do
+            printf '147147\n147147\n' | pmbootstrap install \
+              --password 147147 && break
+            echo "::warning::pmbootstrap install gagal (percobaan $i)"
+            tail -n 120 "$HOME/.local/var/pmbootstrap/log.txt"
+            [ "$i" -eq 3 ] && exit 1
+            pmbootstrap zap || true
+          done
           pmbootstrap export
 
       - name: Repack boot + init_boot (magiskboot)
