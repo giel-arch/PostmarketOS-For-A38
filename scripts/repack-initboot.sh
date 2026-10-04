@@ -67,16 +67,24 @@ cat >> init_functions.sh <<'OSSI_EOF'
 stowaway="${stowaway:-y}"
 force_load_mtk_modules() {
 	echo "  ossi: force-loading MTK vendor modules..."
-	for mod in clk-common clk-mt6768 clk-mt6768-pg clkchk-mt6768 \
-	           clk-fmeter-mt6768 pinctrl-mtk-v2 pinctrl-mt6768 \
+	# Urutan = urutan dependensi (cqhci SEBELUM mtk-mmc; kalau tidak,
+	# finit_module mtk-mmc gagal karena simbol cqhci belum ada).
+	MODS="clk-common clk-mt6768 clk-mt6768-pg clkchk-mt6768 clkdbg-mt6768 \
+	           clk-fmeter-mt6768 pd-chk-mt6768 pinctrl-mtk-v2 pinctrl-mt6768 \
 	           mtk-pmic-wrap mt6397 mt6358-regulator mt635x-auxadc \
 	           mt6577_auxadc mtk-scpsys mtk-scpsys-mt6768 \
-	           mtk-scpsys-bringup mtk_iommu mtk-smi mtk-mmc cqhci \
-	           mtk-mmc-wp timer-mediatek i2c-mt65xx; do
-		f=$(find /lib/modules -name "${mod}.ko" 2>/dev/null | head -n 1)
-		if [ -n "$f" ]; then
-			/usr/bin/force_insmod "$f" >/dev/null 2>&1 || true
-		fi
+	           mtk-scpsys-bringup mtk_iommu mtk-smi cqhci mtk-mmc \
+	           mtk-mmc-wp timer-mediatek i2c-mt65xx"
+	# 3 pass: modul yang gagal karena dependensinya belum ke-load di
+	# pass sebelumnya berpeluang sukses di pass berikutnya.
+	for pass in 1 2 3; do
+		for mod in $MODS; do
+			f=$(find /lib/modules -name "${mod}.ko" 2>/dev/null | head -n 1)
+			[ -n "$f" ] || continue
+			if ! /usr/bin/force_insmod "$f" >/dev/null 2>&1; then
+				[ "$pass" = "3" ] && echo "  ossi: GAGAL load $mod"
+			fi
+		done
 	done
 	sleep 1
 }
