@@ -75,13 +75,15 @@ force_load_mtk_modules() {
 	LOADFILE=/lib/modules/modules.load.recovery
 	load_one() {
 		mod="$1"
+		printf '.'   # penanda posisi urutan: modul ke-N titik = modul ke-N di daftar
 		grep -qxF "$mod" /lib/modules/.loaded 2>/dev/null && return 0
 		f=$(find /lib/modules -name "$mod" 2>/dev/null | head -n 1)
 		[ -n "$f" ] || return 0
 		if /usr/bin/force_insmod "$f" >/dev/null 2>&1; then
 			echo "$mod" >> /lib/modules/.loaded
 		elif [ "$pass" = "3" ]; then
-			echo "  ossi: GAGAL load $mod"
+			echo ""
+			echo "  ossi: GAGAL load $mod (titik ke-$(grep -c . /lib/modules/.loaded 2>/dev/null))"
 		fi
 	}
 	msdc_diag() {
@@ -109,6 +111,8 @@ force_load_mtk_modules() {
 			while read -r mod; do
 				case "$mod" in *.ko) load_one "$mod";; esac
 			done < "$LOADFILE"
+			echo ""
+			echo "  ossi: pass $pass selesai ($(grep -c . /lib/modules/.loaded 2>/dev/null || echo 0) modul termuat)"
 		else
 			# fallback: daftar statis (bila file vendor tidak ada)
 			for mod in clk-common.ko clk-mt6768.ko clk-mt6768-pg.ko \
