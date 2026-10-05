@@ -84,6 +84,26 @@ force_load_mtk_modules() {
 			echo "  ossi: GAGAL load $mod"
 		fi
 	}
+	msdc_diag() {
+		# Diagnostik status eMMC/msdc -> console (terbaca via pstore
+		# pada boot berikutnya).
+		echo "  ossi: diag mtk-msdc:"
+		grep mtk_mmc /proc/modules 2>/dev/null || echo "  ossi: mtk_mmc TIDAK termuat"
+		if [ -d /sys/bus/platform/drivers/mtk-msdc ]; then
+			echo "  ossi: driver mtk-msdc terdaftar"
+			for d in 11230000.mmc 11240000.mmc; do
+				if [ -e "/sys/bus/platform/devices/$d" ] && \
+				   [ ! -e "/sys/bus/platform/drivers/mtk-msdc/$d" ]; then
+					echo "  ossi: bind paksa $d"
+					echo "$d" > /sys/bus/platform/drivers/mtk-msdc/bind 2>/dev/null
+				fi
+			done
+		else
+			echo "  ossi: driver mtk-msdc TIDAK terdaftar!"
+		fi
+		ls /dev/mmcblk* 2>/dev/null || echo "  ossi: tidak ada /dev/mmcblk*"
+		dmesg 2>/dev/null | grep -iE 'msdc|mmc' | tail -12
+	}
 	for pass in 1 2 3; do
 		if [ -f "$LOADFILE" ]; then
 			while read -r mod; do
