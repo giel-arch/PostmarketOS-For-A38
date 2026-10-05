@@ -13,27 +13,23 @@ LOAD() {
 	fi
 }
 
-# Urutan DIHASILKAN dari graf depends modinfo (topological sort,
-# 55 modul, siklus=0). Fase rootfs = closure USB (MUSB + phy) +
-# display (mediatek-drm + panel ili7807s + ocp2130) + touch (ilitek).
-for mod in \
-aee_aed.ko buildvariant.ko clkbuf.ko drm_display_helper.ko drm_dma_helper.ko \
-emicen.ko irq-dbg.ko leds-mtk.ko mrdump.ko mtk_boot_common.ko \
-mtk_disp_notify.ko mtk_dramc.ko mtk-dvfsrc.ko mtk-icc-core.ko \
-mtk-mmdebug-vcp-stub.ko mtk-mmdvfs-ftrace.ko mtk_panel_ext.ko mtk_sync.ko \
-ocp2130_drv.ko olc.ko oplus_bsp_fw_update.ko oplus_bsp_mm_osvelte.ko \
-oplus_bsp_tp_ilitek_common.ko oplus_bsp_tp_notify.ko oplusboot.ko \
-pd_dbg_info.ko phy-generic.ko phy-mtk-tphy.ko pwm-mtk-disp.ko spi_slave.ko \
-clk-common.ko mmprofile.ko mtk-smi.ko iommu_debug.ko mme.ko \
-oplus_boost_pool_mtk.ko oplus_bsp_boot_projectinfo.ko tcpc_class.ko \
-mtk-smi-dbg.ko system_heap.ko device_info.ko oplus_bsp_tp_custom.ko \
-extcon-mtk-usb.ko musb_hdrc.ko mtk-cmdq-drv-ext.ko mtk-mmdvfs.ko \
-oplus_bsp_tp_common.ko musb_main.ko mtk-mml.ko mtk-mmdvfs-debug.ko \
-oplus_bsp_tp_ilitek7807s.ko mmqos-common.ko mediatek-drm.ko \
-leds-mtk-disp.ko oplus24700_ili7807s_tm_fhdp_dsi_vdo.ko
-do
-	LOAD "$mod"
-done
+# URUTAN RESMI VENDOR: modules.load (daftar boot normal Android) dari
+# vendor_boot — 196 modul, termasuk USB/display/touch.
+if [ -f /lib/modules/vendor-force/modules.load ]; then
+	while read -r mod; do
+		case "$mod" in *.ko) LOAD "$mod";; esac
+	done < /lib/modules/vendor-force/modules.load
+else
+	# fallback: rantai inti USB + tampilan + sentuh
+	for m in extcon-mtk-usb phy-mtk-tphy phy-generic musb_hdrc musb_main \
+	         i2c-mt65xx mediatek-drm drm_display_helper drm_dma_helper \
+	         mtk_panel_ext pwm-mtk-disp leds-mtk-disp ocp2130_drv \
+	         oplus24700_ili7807s_tm_fhdp_dsi_vdo \
+	         oplus_bsp_tp_custom oplus_bsp_tp_ilitek_common \
+	         oplus_bsp_tp_ilitek7807s; do
+		LOAD "$m.ko"
+	done
+fi
 
 # Gadget NCM via configfs
 [ -d /sys/kernel/config/usb_gadget ] || \

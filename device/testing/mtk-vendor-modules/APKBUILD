@@ -20,6 +20,9 @@ package() {
 	# Modul vendor dari vendor_boot (vermagic beda -> dimuat paksa)
 	install -d "$pkgdir/lib/modules/vendor-force"
 	install -m644 "$srcdir"/modules/*.ko "$pkgdir/lib/modules/vendor-force/"
+	# Urutan load resmi vendor (dipakai usb-gadget)
+	install -m644 "$srcdir"/modules/modules.load \
+		"$pkgdir/lib/modules/vendor-force/modules.load"
 
 	# Gadget USB NCM supaya SSH bisa jalan via kabel (v1 belum ada layar)
 	install -Dm755 "$srcdir/usb-gadget.sh" \

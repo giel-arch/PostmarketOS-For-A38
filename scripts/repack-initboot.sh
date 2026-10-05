@@ -67,33 +67,38 @@ cat >> init_functions.sh <<'OSSI_EOF'
 stowaway="${stowaway:-y}"
 force_load_mtk_modules() {
 	echo "  ossi: force-loading MTK vendor modules..."
-	# Urutan = topo-sort graf depends + urutan probe (clk & scpsys
-	# SEBELUM auxadc/smi yang probe-nya butuh clock/power domain).
-	# Tambahan provider simbol: mtk-scpsys (init_scp), mcDrvModule +
-	# ufs-mediatek-mod (mc_*/rpmb utk rpmb-mtk -> mtk-mmc).
-	MODS="aee_aed.ko buildvariant.ko emicen.ko iommu_secure.ko irq-dbg.ko \
-mrdump.ko clk-common.ko clk-fmeter-mt6768.ko clk-mt6768.ko clk-mt6768-pg.ko \
-clkchk-mt6768.ko clkdbg-mt6768.ko pd-chk-mt6768.ko mtk-pmic-wrap.ko \
-mt6397.ko mt6358-regulator.ko mt635x-auxadc.ko mtk-scpsys.ko \
-mtk-scpsys-bringup.ko mtk-scpsys-mt6768.ko mtk-smi.ko mtk-smi-dbg.ko \
-mtk_iommu_util.ko iommu_debug.ko mtk_iommu.ko mt6577_auxadc.ko \
-pinctrl-mtk-v2.ko pinctrl-mtk-common-v2_debug.ko blocktag.ko cqhci.ko \
-device_info.ko mtk-mmc-dbg.ko mtk_boot_common.ko oplusboot.ko \
-oplus_bsp_boot_projectinfo.ko rpmb.ko mcDrvModule.ko \
-ufs-mediatek-dbg.ko ufs-oplus-dbg.ko ufs-mediatek-mod.ko \
-rpmb-mtk.ko mtk-mmc-wp.ko mtk-mmc.ko timer-mediatek.ko i2c-mt65xx.ko"
-	# 3 pass; modul yang sudah termuat dilewati (finit_module ulang
-	# = EEXIST, bukan kegagalan).
+	# URUTAN RESMI VENDOR: modules.load.recovery dari vendor_boot
+	# vendor_ramdisk (Android recovery memuatnya via modprobe urutan
+	# yang sama; kita pakai force_insmod). 3 pass meniru resolusi
+	# dependensi modprobe. Modul termuat dicatat di /lib/modules/.loaded
+	# (EEXIST bukan kegagalan).
+	LOADFILE=/lib/modules/modules.load.recovery
+	load_one() {
+		mod="$1"
+		grep -qxF "$mod" /lib/modules/.loaded 2>/dev/null && return 0
+		f=$(find /lib/modules -name "$mod" 2>/dev/null | head -n 1)
+		[ -n "$f" ] || return 0
+		if /usr/bin/force_insmod "$f" >/dev/null 2>&1; then
+			echo "$mod" >> /lib/modules/.loaded
+		elif [ "$pass" = "3" ]; then
+			echo "  ossi: GAGAL load $mod"
+		fi
+	}
 	for pass in 1 2 3; do
-		for mod in $MODS; do
-			name=$(echo "$mod" | sed 's/\.ko$//; s/-/_/g')
-			f=$(find /lib/modules -name "$mod" 2>/dev/null | head -n 1)
-			[ -n "$f" ] || continue
-			if ! /usr/bin/force_insmod "$f" >/dev/null 2>&1; then
-				grep -qE "^($name|${mod%.ko}) " /proc/modules 2>/dev/null && continue
-				[ "$pass" = "3" ] && echo "  ossi: GAGAL load $mod"
-			fi
-		done
+		if [ -f "$LOADFILE" ]; then
+			while read -r mod; do
+				case "$mod" in *.ko) load_one "$mod";; esac
+			done < "$LOADFILE"
+		else
+			# fallback: daftar statis (bila file vendor tidak ada)
+			for mod in clk-common.ko clk-mt6768.ko clk-mt6768-pg.ko \
+			           mtk-pmic-wrap.ko mt6397.ko mt6358-regulator.ko \
+			           mtk-scpsys.ko mtk-scpsys-mt6768.ko mcDrvModule.ko \
+			           device_info.ko mtk-mmc-dbg.ko cqhci.ko \
+			           rpmb-mtk.ko mtk-mmc.ko timer-mediatek.ko; do
+				load_one "$mod"
+			done
+		fi
 	done
 	sleep 1
 }
