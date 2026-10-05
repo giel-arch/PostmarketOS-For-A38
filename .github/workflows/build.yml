@@ -42,6 +42,7 @@ jobs:
             https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r510928.git \
             "$GITHUB_WORKSPACE/toolchain"
           cd kernel
+          patch -p1 < "$GITHUB_WORKSPACE/kernel-pmos/patches/0100-ossi-projectinfo.patch"
           # JANGAN kosongkan scripts/setlocalversion (lihat catatan di
           # workflow Kernel-mt6769-a38-PMOS)
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 oppo_a38_defconfig
