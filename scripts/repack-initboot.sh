@@ -124,6 +124,23 @@ force_load_mtk_modules() {
 			done
 		fi
 	done
+	# Fase tampilan+sentuh: modul display -> fb0 hidup -> progres boot
+	# TERLIHAT DI LAYAR (console tty0 menggambar teks di atas logo).
+	for mod in mtk-cmdq-drv-ext.ko drm_display_helper.ko drm_dma_helper.ko \
+	           mediatek-drm.ko mtk_panel_ext.ko pwm-mtk-disp.ko leds-mtk.ko \
+	           leds-mtk-disp.ko ocp2130_drv.ko \
+	           oplus24700_ili7807s_tm_fhdp_dsi_vdo.ko \
+	           oplus_bsp_tp_custom.ko oplus_bsp_tp_ilitek_common.ko \
+	           oplus_bsp_tp_ilitek7807s.ko mmqos-common.ko mtk-mml.ko; do
+		load_one "$mod"
+	done
+	if [ -e /dev/fb0 ]; then
+		echo ""
+		echo "OSSI INITRAMFS v11 - CONSOLE HIDUP DI LAYAR"
+		echo "modul termuat: $(grep -c . /lib/modules/.loaded 2>/dev/null)"
+		echo ""
+	fi
+	msdc_diag
 	sleep 1
 }
 root_path_default() {
