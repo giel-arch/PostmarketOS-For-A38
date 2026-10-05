@@ -79,7 +79,8 @@ mtk-scpsys-bringup.ko mtk-scpsys-mt6768.ko mtk-smi.ko mtk-smi-dbg.ko \
 mtk_iommu_util.ko iommu_debug.ko mtk_iommu.ko mt6577_auxadc.ko \
 pinctrl-mtk-v2.ko pinctrl-mtk-common-v2_debug.ko blocktag.ko cqhci.ko \
 device_info.ko mtk-mmc-dbg.ko mtk_boot_common.ko oplusboot.ko \
-oplus_bsp_boot_projectinfo.ko rpmb.ko mcDrvModule.ko ufs-mediatek-mod.ko \
+oplus_bsp_boot_projectinfo.ko rpmb.ko mcDrvModule.ko \
+ufs-mediatek-dbg.ko ufs-oplus-dbg.ko ufs-mediatek-mod.ko \
 rpmb-mtk.ko mtk-mmc-wp.ko mtk-mmc.ko timer-mediatek.ko i2c-mt65xx.ko"
 	# 3 pass; modul yang sudah termuat dilewati (finit_module ulang
 	# = EEXIST, bukan kegagalan).
