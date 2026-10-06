@@ -24,7 +24,7 @@ else
 	for m in extcon-mtk-usb phy-mtk-tphy phy-generic musb_hdrc musb_main \
 	         i2c-mt65xx mediatek-drm drm_display_helper drm_dma_helper \
 	         mtk_panel_ext pwm-mtk-disp leds-mtk-disp ocp2130_drv \
-	         oplus24700_ili7807s_tm_fhdp_dsi_vdo \
+	         ac114_p_3_a0013_hd_dsi_vdo \
 	         oplus_bsp_tp_custom oplus_bsp_tp_ilitek_common \
 	         oplus_bsp_tp_ilitek7807s; do
 		LOAD "$m.ko"
