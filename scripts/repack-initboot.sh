@@ -143,6 +143,11 @@ force_load_mtk_modules() {
 	msdc_diag
 	sleep 1
 }
+ossi_telnetd() {
+	# Shell interaktif di initramfs via USB (telnet 172.16.42.1)
+	/bin/busybox-extras telnetd -p 23 -l /bin/sh 2>/dev/null && \
+		echo "  ossi: telnetd AKTIF di 172.16.42.1:23"
+}
 root_path_default() {
 	# Rootfs pmOS = partisi userdata (mmcblk0p59). Path mmcblk
 	# eksplisit, bukan by-name/by-partlabel (symlinks itu buatan
@@ -155,6 +160,7 @@ OSSI_EOF
 
 sed -i 's|^find_root_partition() {|find_root_partition() {\n\troot_path_default|' init_functions.sh
 sed -i 's|^jump_init_2nd$|force_load_mtk_modules\njump_init_2nd|' init
+sed -i 's|^start_unudhcpd$|start_unudhcpd\nossi_telnetd|' init
 
 # --- repack: cpio mentah, magiskboot kompres lz4_legacy ---
 find . -print0 | cpio --null -o -H newc 2>/dev/null > ../ramdisk.cpio
