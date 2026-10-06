@@ -3,6 +3,10 @@ name: Build postmarketOS (OPPO A38)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "mainline/**"
+      - "tools/**"
+      - ".github/workflows/build-mainline.yml"
   workflow_dispatch:
 
 jobs:
