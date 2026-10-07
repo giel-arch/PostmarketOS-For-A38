@@ -143,6 +143,31 @@ force_load_mtk_modules() {
 	msdc_diag
 	sleep 1
 }
+setup_usb_network() {
+	# OVERRIDE pmOS: kernel A14 stock tidak punya NCM, tapi punya RNDIS.
+	# Gadget configfs RNDIS manual -> host melihat NIC (rndis_host).
+	echo "  ossi: setup USB RNDIS..."
+	[ -d /sys/kernel/config/usb_gadget ] || \
+		mount -t configfs none /sys/kernel/config 2>/dev/null
+	G=/sys/kernel/config/usb_gadget/ossi
+	mkdir -p "$G/functions/rndis.usb0" "$G/strings/0x409" "$G/configs/c.1" 2>/dev/null
+	echo "OPPO A38 (pmOS ossi)" > "$G/strings/0x409/product" 2>/dev/null
+	echo "postmarketOS" > "$G/strings/0x409/manufacturer" 2>/dev/null
+	echo 0x22d9 > "$G/idVendor" 2>/dev/null
+	echo 0x2764 > "$G/idProduct" 2>/dev/null
+	ln -sfn "$G/functions/rndis.usb0" "$G/configs/c.1/f1" 2>/dev/null
+	UDC=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+	if [ -n "$UDC" ]; then
+		echo "$UDC" > "$G/UDC" 2>/dev/null
+		echo "  ossi: UDC $UDC terikat"
+	else
+		echo "  ossi: TIDAK ADA UDC!"
+	fi
+	sleep 1
+	ip link set usb0 up 2>/dev/null
+	ip addr add 172.16.42.1/24 dev usb0 2>/dev/null
+	echo "  ossi: usb0 = 172.16.42.1/24"
+}
 ossi_telnetd() {
 	# Shell interaktif di initramfs via USB (telnet 172.16.42.1)
 	/bin/busybox-extras telnetd -p 23 -l /bin/sh 2>/dev/null && \
