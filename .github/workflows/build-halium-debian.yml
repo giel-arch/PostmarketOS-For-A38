@@ -45,10 +45,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential cpio flex \
-            gcc-10-aarch64-linux-gnu gcc-10 git libncurses-dev libssl-dev \
-            python3 zstd || \
-          sudo apt-get install -y bc bison build-essential cpio flex \
-            gcc-aarch64-linux-gnu git libncurses-dev libssl-dev python3 zstd
+            gcc-aarch64-linux-gnu gcc-10-aarch64-linux-gnu git libncurses-dev \
+            libssl-dev python3 zstd
 
       - name: Konfigurasi (k69v1_64_k419 + fragment Halium)
         run: |
