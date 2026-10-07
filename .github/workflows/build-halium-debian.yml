@@ -35,10 +35,11 @@ jobs:
           cd ..
           git clone --depth=1 -b "${KREF}" \
             https://github.com/oppo-source/android_kernel_modules_oppo_mt6769 modules
-          # tree Oppo merujuk vendor/ (sched_assist dll) dari repo modules
-          cp -rn modules/vendor kernel/ 2>/dev/null || true
+          # symlink "../../vendor/..." di tree merujuk vendor DI ATAS workspace
+          mkdir -p "$GITHUB_WORKSPACE/../vendor"
+          cp -r modules/vendor/. "$GITHUB_WORKSPACE/../vendor/" 2>/dev/null || true
           cp -rn modules/kernel/. kernel/ 2>/dev/null || true
-          echo "vendor/ merged: $(ls kernel/vendor 2>/dev/null | head -3)"
+          echo "vendor placed: $(ls "$GITHUB_WORKSPACE/../vendor" | head -3)"
 
       - name: Install dependencies
         run: |
@@ -52,21 +53,35 @@ jobs:
       - name: Konfigurasi (k69v1_64_k419 + fragment Halium)
         run: |
           cd kernel
-          # Tree Oppo punya placeholder/symlink mati -> healer iteratif:
-          # setiap Kconfig yang hilang diganti dir + Kconfig/Makefile kosong
-          for i in $(seq 1 30); do
-            ERR=$(make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- k69v1_64_k419_defconfig 2>&1 \
-              | grep -oE 'can.t open file "[^"]+"' | sed 's/can.t open file "//;s/"//' | sort -u) || true
-            [ -z "$ERR" ] && break
-            echo "healing pass $i: $ERR"
-            for k in $ERR; do
-              d=$(dirname "$k")
-              rm -f "$d" 2>/dev/null || true
-              mkdir -p "$d"
-              [ -f "$k" ] || : > "$k"
-              [ -f "$d/Makefile" ] || echo "obj-y := " > "$d/Makefile"
-            done
-          done
+          # Healer Kconfig: tree Oppo penuh placeholder/symlink mati.
+          # Python menghitung closure semua `source` yang hilang dan
+          # membuat stub-nya sekaligus (2-3 iterasi konvergen).
+          python3 - <<'HEAL'
+          import os, re, sys
+          os.chdir('kernel')
+          for it in range(50):
+              missing = []
+              for dp, dn, fn in os.walk('.'):
+                  if 'Kconfig' not in fn: continue
+                  k = os.path.join(dp, 'Kconfig')
+                  try: txt = open(k, errors='ignore').read()
+                  except Exception: continue
+                  for m in re.finditer(r'^\s*source\s+"([^"]+)"', txt, re.M):
+                      t = os.path.normpath(os.path.join(dp, m.group(1)))
+                      if not os.path.exists(t): missing.append((k, t))
+              if not missing:
+                  print(f"converged iter {it}"); break
+              for k, t in missing:
+                  if os.path.isfile(t) and not os.path.isdir(t):
+                      os.remove(t)
+                  os.makedirs(t, exist_ok=True)
+                  open(os.path.join(t, 'Kconfig'), 'a').close()
+                  if not os.path.exists(os.path.join(t, 'Makefile')):
+                      open(os.path.join(t, 'Makefile'), 'w').write('obj-y := \n')
+              print(f"heal iter {it}: {len(missing)} stub")
+          else:
+              print("WARNING: belum konvergen 50 iter")
+          HEAL
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- k69v1_64_k419_defconfig
           ./scripts/config --file .config \
             --enable CONFIG_IKCONFIG \
@@ -128,7 +143,7 @@ jobs:
           sudo mkdir -p rootfs/etc/systemd/system/multi-user.target.wants
           sudo ln -sf /lib/systemd/system/ssh.service rootfs/etc/systemd/system/multi-user.target.wants/ssh.service
 
-          mkdir -p rootfs/boot && gzip -c /dev/null > rootfs/boot/initramfs-extra
+          sudo mkdir -p rootfs/boot && sudo sh -c 'gzip -c /dev/null > rootfs/boot/initramfs-extra' 
           sudo tee rootfs/etc/systemd/system/ossi-usb.service > /dev/null <<'UNIT'
           [Unit]
           Description=Ossi USB RNDIS gadget
