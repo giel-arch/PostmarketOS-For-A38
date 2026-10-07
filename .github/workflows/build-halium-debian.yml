@@ -1,0 +1,214 @@
+name: Build Debian + Halium14 (A38 A14 base)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "halium/**"
+      - ".github/workflows/build-halium-debian.yml"
+  workflow_dispatch:
+
+env:
+  KSRC: https://github.com/oppo-source/android_kernel_oppo_mt6769
+  KREF: oppo/mt6769_u_14.0_a38_a18
+  CMDLINE: "console=tty0 loglevel=7 systempart=/dev/mmcblk0p59 ramoops.mem_address=0x4d010000 ramoops.mem_size=0xe0000 ramoops.console_size=0x40000 ramoops.pmsg_size=0x80000"
+  # header A14 (dari boot_b stok, terverifikasi):
+  #   pagesize 2048, base 0x40000000, kernel +0x8000, ramdisk +0x7c80000,
+  #   tags +0xbc80000, header v2
+
+jobs:
+  kernel:
+    name: Kernel 4.19.191 kustom (fragment Halium)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repo ini
+        uses: actions/checkout@v4
+
+      - name: Clone kernel A14 (Oppo source)
+        run: |
+          git clone --depth=1 -b "${KREF}" "${KSRC}" kernel
+          cd kernel
+          SHA=$(git ls-remote origin "${KREF}" | cut -f1)
+          git fetch --depth=1 origin "${SHA}"
+          git checkout "${SHA}"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential cpio flex \
+            gcc-10-aarch64-linux-gnu gcc-10 git libncurses-dev libssl-dev \
+            python3 zstd || \
+          sudo apt-get install -y bc bison build-essential cpio flex \
+            gcc-aarch64-linux-gnu git libncurses-dev libssl-dev python3 zstd
+
+      - name: Konfigurasi (k69v1_64_k419 + fragment Halium)
+        run: |
+          cd kernel
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- k69v1_64_k419_defconfig
+          ./scripts/config --file .config \
+            --enable CONFIG_IKCONFIG \
+            --enable CONFIG_IKCONFIG_PROC \
+            --enable CONFIG_VT \
+            --enable CONFIG_FRAMEBUFFER_CONSOLE \
+            --enable CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY \
+            --enable CONFIG_SYSVIPC \
+            --enable CONFIG_PID_NS \
+            --enable CONFIG_IPC_NS \
+            --enable CONFIG_UTS_NS \
+            --disable CONFIG_ANDROID_PARANOID_NETWORK \
+            --disable LOCALVERSION_AUTO \
+            --set-str LOCALVERSION "-ossi-a14"
+          sed -i 's/^CONFIG_LOG_BUF_SHIFT=.*/CONFIG_LOG_BUF_SHIFT=21/' .config
+          grep -q '^CONFIG_LOG_BUF_SHIFT' .config || echo 'CONFIG_LOG_BUF_SHIFT=21' >> .config
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E 'IKCONFIG|FRAMEBUFFER_CONSOLE|^CONFIG_VT=|PSTORE_RAM|LOCALVERSION=|PARANOID' .config | head -10
+
+      - name: Build Image.gz
+        run: |
+          cd kernel
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz
+          ls -la arch/arm64/boot/Image.gz
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: a14-kernel
+          path: kernel/arch/arm64/boot/Image.gz
+
+  initrd:
+    name: initramfs-tools-halium (droidian)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build initramfs-tools-halium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap qemu-user-static git cpio gzip
+          git clone --depth=1 -b droidian https://github.com/droidian/initramfs-tools-halium.git
+          cd initramfs-tools-halium
+          (sudo ./build-initrd.sh -a arm64 || sudo ./build-initrd.sh arm64)
+          INITRD=$(find . -name 'initrd.img*' | head -1)
+          [ -n "$INITRD" ] && cp "$INITRD" "$GITHUB_WORKSPACE/initrd-halium.gz" || {
+            echo "initrd tidak ketemu:"; find . -name '*initrd*'; exit 1; }
+
+      - name: Upload initrd
+        uses: actions/upload-artifact@v4
+        with:
+          name: a14-initrd-halium
+          path: initrd-halium.gz
+
+  rootfs:
+    name: Debian trixie arm64 rootfs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debootstrap Debian trixie arm64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap qemu-user-static systemd-container
+          sudo debootstrap --arch=arm64 --variant=minbase \
+            --include=systemd,systemd-sysv,openssh-server,sudo,nano,iproute2,iputils-ping,kmod,udev,net-tools \
+            trixie rootfs http://deb.debian.org/debian
+
+      - name: Konfigurasi rootfs (chroot qemu)
+        run: |
+          sudo mount --bind /proc rootfs/proc
+          sudo mount --bind /sys rootfs/sys
+          sudo mount --bind /dev rootfs/dev
+          sudo chroot rootfs /bin/bash -c '
+            echo "root:ossi" | chpasswd
+            echo "OssiA14" > /etc/hostname
+            echo "127.0.0.1 localhost OssiA14" > /etc/hosts
+            systemctl enable ssh
+          '
+          mkdir -p rootfs/boot && gzip -c /dev/null > rootfs/boot/initramfs-extra
+          sudo tee rootfs/etc/systemd/system/ossi-usb.service > /dev/null <<'UNIT'
+          [Unit]
+          Description=Ossi USB RNDIS gadget
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/sbin/ossi-usb.sh
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          sudo tee rootfs/usr/sbin/ossi-usb.sh > /dev/null <<'SCRIPT'
+          #!/bin/sh
+          G=/sys/kernel/config/usb_gadget/ossi
+          [ -d /sys/kernel/config/usb_gadget ] || mount -t configfs none /sys/kernel/config
+          mkdir -p "$G/functions/rndis.usb0" "$G/strings/0x409" "$G/configs/c.1"
+          echo "OPPO A38 Debian" > "$G/strings/0x409/product"
+          ln -sfn "$G/functions/rndis.usb0" "$G/configs/c.1/f1"
+          UDC=$(ls /sys/class/udc | head -n 1)
+          [ -n "$UDC" ] && echo "$UDC" > "$G/UDC"
+          sleep 1
+          ip link set usb0 up
+          ip addr add 172.16.42.1/24 dev usb0
+          SCRIPT
+          sudo chmod +x rootfs/usr/sbin/ossi-usb.sh
+          sudo systemctl enable ossi-usb.service --root=rootfs 2>/dev/null || \
+            sudo ln -sf /etc/systemd/system/ossi-usb.service rootfs/etc/systemd/system/multi-user.target.wants/ossi-usb.service
+          sudo umount rootfs/dev rootfs/sys rootfs/proc 2>/dev/null || true
+          sudo tar -C rootfs -czf debian-rootfs-arm64.tar.gz .
+
+      - name: Upload rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-rootfs
+          path: debian-rootfs-arm64.tar.gz
+          compression-level: 0
+
+  pack:
+    name: Rakit boot + userdata siap flash
+    needs: [kernel, initrd, rootfs]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repo ini
+        uses: actions/checkout@v4
+
+      - name: Unduh artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: art
+
+      - name: Rakit boot-a14 + userdata
+        run: |
+          curl -sL -o mkbootimg.py \
+            https://raw.githubusercontent.com/giel-arch/Kernel-mt6769-a38-PMOS/main/tools/mkbootimg.py
+          # dtb stok A14 tersimpan di repo ini
+          cp halium/a14-dtb-stock.bin dtb-stock.bin
+          # kernel: artifact Image.gz sudah gzip - pakai apa adanya
+          cp art/a14-kernel/Image.gz kernel.gz
+          # initramfs v13 (dari repo) + pastikan /boot/initramfs-extra kosong
+          mkdir rd && cd rd && gzip -dc ../halium/initramfs-v13.cpio.gz | cpio -id --no-absolute-filenames
+          mkdir -p boot && gzip -c /dev/null > boot/initramfs-extra
+          find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9 > ../initramfs.cpio.gz
+          cd .. && cp initramfs.cpio.gz initrd.gz
+          python3 mkbootimg.py \
+            --kernel kernel.gz --ramdisk initrd.gz --dtb dtb-stock.bin \
+            --header_version 2 --pagesize 2048 \
+            --base 0x40000000 --kernel_offset 0x00008000 \
+            --ramdisk_offset 0x07c80000 --tags_offset 0x0bc80000 \
+            --cmdline "${{ env.CMDLINE }}" \
+            -o boot-a14-ossi.img
+          # userdata: rootfs Debian
+          mkdir rootfs && tar -C rootfs -xzf art/debian-rootfs/debian-rootfs-arm64.tar.gz
+          mkfs.ext4 -F -d rootfs -L userdata -b 4096 userdata.img 8G
+          ls -la boot-a14-ossi.img userdata.img
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: halium-debian-pack
+          path: |
+            boot-a14-ossi.img
+            userdata.img
+          if-no-files-found: error
