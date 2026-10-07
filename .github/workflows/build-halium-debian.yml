@@ -25,13 +25,20 @@ jobs:
       - name: Checkout repo ini
         uses: actions/checkout@v4
 
-      - name: Clone kernel A14 (Oppo source)
+      - name: Clone kernel A14 (base + modules, merge vendor/)
         run: |
           git clone --depth=1 -b "${KREF}" "${KSRC}" kernel
           cd kernel
           SHA=$(git ls-remote origin "${KREF}" | cut -f1)
           git fetch --depth=1 origin "${SHA}"
           git checkout "${SHA}"
+          cd ..
+          git clone --depth=1 -b "${KREF}" \
+            https://github.com/oppo-source/android_kernel_modules_oppo_mt6769 modules
+          # tree Oppo merujuk vendor/ (sched_assist dll) dari repo modules
+          cp -rn modules/vendor kernel/ 2>/dev/null || true
+          cp -rn modules/kernel/. kernel/ 2>/dev/null || true
+          echo "vendor/ merged: $(ls kernel/vendor 2>/dev/null | head -3)"
 
       - name: Install dependencies
         run: |
@@ -45,6 +52,21 @@ jobs:
       - name: Konfigurasi (k69v1_64_k419 + fragment Halium)
         run: |
           cd kernel
+          # Tree Oppo punya placeholder/symlink mati -> healer iteratif:
+          # setiap Kconfig yang hilang diganti dir + Kconfig/Makefile kosong
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            ERR=$(make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- k69v1_64_k419_defconfig 2>&1 \
+              | grep -oE 'can.t open file "[^"]+"' | sed 's/can.t open file "//;s/"//' | sort -u) || true
+            [ -z "$ERR" ] && break
+            echo "healing pass $i: $ERR"
+            for k in $ERR; do
+              d=$(dirname "$k")
+              rm -f "$d" 2>/dev/null || true
+              mkdir -p "$d"
+              [ -f "$k" ] || : > "$k"
+              [ -f "$d/Makefile" ] || echo "obj-y := " > "$d/Makefile"
+            done
+          done
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- k69v1_64_k419_defconfig
           ./scripts/config --file .config \
             --enable CONFIG_IKCONFIG \
@@ -75,31 +97,6 @@ jobs:
         with:
           name: a14-kernel
           path: kernel/arch/arm64/boot/Image.gz
-
-  initrd:
-    name: initramfs-tools-halium (droidian)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build initramfs-tools-halium
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y debootstrap qemu-user-static git cpio gzip
-          git clone --depth=1 -b droidian https://github.com/droidian/initramfs-tools-halium.git
-          cd initramfs-tools-halium
-          (sudo ./build-initrd.sh -a arm64 || sudo ./build-initrd.sh arm64)
-          INITRD=$(find . -name 'initrd.img*' | head -1)
-          [ -n "$INITRD" ] && cp "$INITRD" "$GITHUB_WORKSPACE/initrd-halium.gz" || {
-            echo "initrd tidak ketemu:"; find . -name '*initrd*'; exit 1; }
-
-      - name: Upload initrd
-        uses: actions/upload-artifact@v4
-        with:
-          name: a14-initrd-halium
-          path: initrd-halium.gz
 
   rootfs:
     name: Debian trixie arm64 rootfs
@@ -167,7 +164,7 @@ jobs:
 
   pack:
     name: Rakit boot + userdata siap flash
-    needs: [kernel, initrd, rootfs]
+    needs: [kernel, rootfs]
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
