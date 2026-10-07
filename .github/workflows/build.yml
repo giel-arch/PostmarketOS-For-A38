@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - "mainline/**"
+      - "halium/**"
       - "tools/**"
       - ".github/workflows/build-mainline.yml"
   workflow_dispatch:
